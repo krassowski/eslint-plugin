@@ -12,6 +12,7 @@ import {
   classifySignalReceiver,
   collectSignalNamespaceLocalNames,
   getEnclosingClass,
+  getThisBinding,
   isConnectCall
 } from '../utils/signals';
 import {
@@ -111,6 +112,13 @@ const requireSignalCleanup = createRule({
         }
         if (node.arguments[1].type !== 'ThisExpression') {
           // Receiver is some other object; its lifetime is not traceable here.
+          return;
+        }
+        if (getThisBinding(node) !== 'instance') {
+          // In a `static` member `this` is the class object, and in a nested
+          // regular function it is whatever the caller binds. Neither is an
+          // instance whose lifetime this rule reasons about, and neither is
+          // removed by a `Signal.clearData(this)` in `dispose()`.
           return;
         }
 

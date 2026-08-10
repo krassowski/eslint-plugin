@@ -25,19 +25,21 @@ No call is ever reported by both rules.
 
 The rule reports a one-argument `signal.connect(callback)` call only when **all** of the following hold:
 
-1. The call is inside a class.
+1. The call is inside a class, in a position where `this` is an instance of it. A `static` member (`this` is the class object) and a nested regular function (`this` is whatever the caller binds) are both skipped: passing that `this` would not register the instance that receiver-based cleanup clears.
 2. The signal is not named `disposed` — that signal fires as its own sender is torn down, so the connection is cleaned up sender-side.
 3. It is not the runtime-bug case owned by `require-signal-this-arg`.
-4. The callback shape is one a `thisArg` could actually help: an inline arrow or function expression, a method or property reference, or a `.bind(this)` call. Opaque callbacks are skipped.
+4. The callback shape is one a `thisArg` could actually help: an inline arrow or function expression, a method or property reference, or a `.bind()` call. Opaque callbacks are skipped.
 5. There is no matching one-argument `.disconnect(callback)` anywhere in the file — Lumino matches connections by the exact `(signal, slot, thisArg)` triple, so adding `, this` would silently break a teardown that currently works.
 6. **The fix is viable**: the class already relies on receiver-based cleanup, shown either by a `Signal.clearData(this)` / `Signal.disconnectReceiver(this)` / `Signal.disconnectAll(this)` / `Signal.disconnectBetween(sender, this)` call or a two-argument `.disconnect(callback, this)` in the class body, or by the class extending a Lumino `Widget` (whose `dispose()` calls `Signal.clearData(this)`). Without one, adding a `thisArg` would change disconnect matching and buy nothing.
 7. **The sender is proven long-lived**, by one of two arguments:
    - **an application-lifetime service** — the sender's type resolves to an entry in the allowlist (see [Options](#options)), with no Lumino `Widget` hop between that entry and the signal (`shell.currentWidget.title.changed` is a widget reached _through_ a service, not a long-lived sender);
    - **a model behind a view** — the receiver extends a Lumino `Widget` and some segment of the sender path is model-like by name (`model`, `sharedModel`, `context`) or by type (a name ending in `Model` or `Context`). JupyterLab routinely recycles views over a stable model: notebook windowing, "New View for Notebook", output-area reuse.
 
+   Neither argument ever matches the enclosing instance itself: a class whose own type name is on the allowlist, or whose own name ends in `Model`, cannot outlive itself, so only the path hanging off `this` is judged.
+
 Everything the rule cannot place — a sender it cannot type, one the class constructs and disposes itself, the class's own signals — is silence.
 
-A **suggestion** (editor quick-fix, not an autofix) is offered to append `, this`, or for `.bind(this)` callbacks to drop the bind and pass `this` instead. These are suggestions rather than fixes because they change how the connection is matched at disconnect time and should be reviewed alongside the class's teardown.
+A **suggestion** (editor quick-fix, not an autofix) is offered to append `, this`. For a `.bind(this)` callback the suggestion drops the bind and passes `this` to `connect()` instead; a `.bind()` onto anything else keeps its bound receiver and only gains `, this`, since rewriting it would change which object the callback runs against. These are suggestions rather than fixes because they change how the connection is matched at disconnect time and should be reviewed alongside the class's teardown.
 
 ## Incorrect
 

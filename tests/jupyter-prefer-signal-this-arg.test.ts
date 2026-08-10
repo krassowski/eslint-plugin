@@ -264,6 +264,64 @@ ruleTester.run('prefer-signal-this-arg', preferSignalThisArg, {
         }
       `,
       options: [{ longLivedTypes: ['IMyOwnService'] }]
+    },
+    {
+      // `this` in a static member is the class object; passing it would not
+      // register the instance that Signal.clearData(this) clears.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class Watcher extends Widget {
+          static wire(registry: ISettingRegistry): void {
+            registry.pluginChanged.connect(() => Watcher._onChanged());
+          }
+          private static _onChanged(): void {}
+        }
+      `
+    },
+    {
+      // Inside a nested regular function `this` is not the instance either.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class Watcher extends Widget {
+          wire(registry: ISettingRegistry): void {
+            function inner(): void {
+              registry.pluginChanged.connect(() => console.log('changed'));
+            }
+            inner();
+          }
+        }
+      `
+    },
+    {
+      // The enclosing class's own type is on the allowlist; it cannot outlive
+      // itself.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class OwnService extends Widget {
+          constructor(shell: IShell) {
+            super();
+            this._shell = shell;
+            this._shell.currentChanged.connect(() => this.update());
+          }
+          private _shell: IShell;
+        }
+      `,
+      options: [{ longLivedTypes: ['OwnService'] }]
+    },
+    {
+      // The same for the model/view argument: a class that is itself named
+      // `...Model` says nothing about the lifetime of its own fields.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class OutlineModel extends Widget {
+          constructor(editor: IEditor) {
+            super();
+            this._editor = editor;
+            this._editor.ready.connect(() => this.update());
+          }
+          private _editor: IEditor;
+        }
+      `
     }
   ],
   invalid: [
@@ -418,6 +476,39 @@ ruleTester.run('prefer-signal-this-arg', preferSignalThisArg, {
       `,
       options: [{ longLivedTypes: ['IMyOwnService'] }],
       errors: [{ messageId: 'preferThisArg', suggestions: 1 }]
+    },
+    {
+      // `.bind()` onto something other than `this` cannot be rewritten into
+      // `(method, this)` without moving the callback's receiver, so it is
+      // reported as an ordinary missing thisArg — appending `, this` leaves
+      // the bound receiver alone and makes the connection removable.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        declare const helper: { onChanged(): void };
+        class Watcher extends Widget {
+          wire(registry: ISettingRegistry): void {
+            registry.pluginChanged.connect(helper.onChanged.bind(helper));
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferThisArg',
+          suggestions: [
+            {
+              messageId: 'addThisArg',
+              output: `${PRELUDE}
+        declare const helper: { onChanged(): void };
+        class Watcher extends Widget {
+          wire(registry: ISettingRegistry): void {
+            registry.pluginChanged.connect(helper.onChanged.bind(helper), this);
+          }
+        }
+      `
+            }
+          ]
+        }
+      ]
     }
   ]
 });

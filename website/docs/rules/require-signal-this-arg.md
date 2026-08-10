@@ -21,6 +21,7 @@ The rule skips:
 - getters and setters — `this.x` evaluates the accessor rather than referencing a function
 - members not found in the enclosing class (possibly inherited) — skipped conservatively
 - calls that already pass a second argument
+- calls inside a nested regular function, where `this` is not the enclosing class at all, so `this.method` does not refer to the member of the same name
 
 This rule only reports the shapes that break at runtime. Callbacks that work without a `thisArg` but leave the connection unclearable by the class's receiver-based cleanup are covered by the companion rule [prefer-signal-this-arg](../prefer-signal-this-arg); no call is reported by both rules.
 

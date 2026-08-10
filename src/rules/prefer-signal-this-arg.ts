@@ -13,6 +13,7 @@ import {
   classifySignalReceiver,
   collectSignalNamespaceLocalNames,
   getEnclosingClass,
+  getThisBinding,
   isConnectCall,
   resolveUnboundThisMethodConnect
 } from '../utils/signals';
@@ -108,6 +109,13 @@ const preferSignalThisArg = createRule({
           // are app-lifetime connections anyway.
           return;
         }
+        if (getThisBinding(node) !== 'instance') {
+          // `this` here is the class object (`static` member) or whatever the
+          // caller binds (nested regular function). Passing it would not
+          // register the instance that receiver-based cleanup clears, so `,
+          // this` is not the fix.
+          return;
+        }
 
         const chain = buildSenderChain(node.callee.object);
         if (isSelfTerminatingSignal(chain)) {
@@ -187,12 +195,18 @@ const preferSignalThisArg = createRule({
           return;
         }
 
+        // A `.bind(this)` can be rewritten into `(method, this)`. A `.bind()`
+        // onto anything else cannot — that would move the callback's receiver
+        // — so it is reported as an ordinary missing thisArg: appending
+        // `, this` is behaviour-preserving there (Lumino invokes the slot with
+        // `call(thisArg, ...)`, which an already-bound function ignores) and
+        // still makes the connection removable by receiver.
         const bindTarget =
           shape === 'bound' ? getUnbindReplacement(callback, sourceCode) : null;
 
         context.report({
           node: callback,
-          messageId: shape === 'bound' ? 'boundCallback' : 'preferThisArg',
+          messageId: bindTarget ? 'boundCallback' : 'preferThisArg',
           data: { sender: analysis.senderText, reason },
           suggest: bindTarget
             ? [
@@ -201,14 +215,12 @@ const preferSignalThisArg = createRule({
                   fix: fixer => fixer.replaceText(callback, bindTarget)
                 }
               ]
-            : shape === 'bound'
-              ? []
-              : [
-                  {
-                    messageId: 'addThisArg',
-                    fix: fixer => fixer.insertTextAfter(callback, ', this')
-                  }
-                ]
+            : [
+                {
+                  messageId: 'addThisArg',
+                  fix: fixer => fixer.insertTextAfter(callback, ', this')
+                }
+              ]
         });
       }
     };

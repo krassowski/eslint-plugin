@@ -299,6 +299,75 @@ ruleTester.run('require-signal-cleanup', requireSignalCleanup, {
         }
       `,
       options: [{ longLivedTypes: ['IMyOwnService'] }]
+    },
+    {
+      // `this` in a static member is the class object, not an instance. The
+      // connection is made once rather than per instance, and an instance
+      // dispose() is not where it would be undone.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class Watcher implements IDisposable {
+          static wire(registry: ISettingRegistry): void {
+            registry.pluginChanged.connect(Watcher._onChanged, this);
+          }
+          readonly isDisposed = false;
+          dispose(): void {}
+          private static _onChanged(): void {}
+        }
+      `
+    },
+    {
+      // Inside a nested regular function `this` is whatever the caller binds,
+      // not the enclosing instance.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class Watcher implements IDisposable {
+          wire(registry: ISettingRegistry): void {
+            function inner(this: unknown): void {
+              registry.pluginChanged.connect(() => {}, this);
+            }
+            inner();
+          }
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+      `
+    },
+    {
+      // The enclosing class's own type is on the allowlist. `this` cannot
+      // outlive itself, so a connection to one of its own fields proves
+      // nothing about lifetimes.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        class ServiceManager implements IDisposable {
+          constructor(shell: IShell) {
+            this._shell = shell;
+            this._shell.currentChanged.connect(this._onChanged, this);
+          }
+          readonly isDisposed = false;
+          dispose(): void {}
+          private _onChanged(): void {}
+          private _shell: IShell;
+        }
+      `,
+      options: [{ longLivedTypes: ['ServiceManager'] }]
+    },
+    {
+      // Cleanup reached through a namespace import of `@lumino/signaling`.
+      filename: 'tests/type-aware-fixture.ts',
+      code: `${PRELUDE}
+        import * as signaling from '@lumino/signaling';
+        class Watcher implements IDisposable {
+          constructor(registry: ISettingRegistry) {
+            registry.pluginChanged.connect(this._onChanged, this);
+          }
+          readonly isDisposed = false;
+          dispose(): void {
+            signaling.Signal.clearData(this);
+          }
+          private _onChanged(): void {}
+        }
+      `
     }
   ],
   invalid: [

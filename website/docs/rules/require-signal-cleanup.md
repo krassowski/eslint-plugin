@@ -20,15 +20,16 @@ So the rule does not ask "is there cleanup here?". It asks "is this sender prova
 
 The rule inspects `signal.connect(callback, this)` calls — two arguments, with `this` as the receiver, inside a class — and reports one only when **all** of the following hold:
 
-1. The class has **no `extends` clause**. A base class such as Lumino's `Widget` already calls `Signal.clearData(this)` from its inherited `dispose()`, and that cleanup is invisible from the subclass body.
-2. The class has a **disposal protocol**: it `implements` something ending in `Disposable`, or declares a non-static `dispose` or `isDisposed` member. Without one it is almost always a plugin-scope singleton whose lifetime already matches the services it connects to — and there is nowhere to put a disconnect anyway.
-3. The signal is not named `disposed`. That signal fires as its own sender is torn down, so the connection dies with it; flagging it would contradict the fix the rule recommends.
-4. The class shows **no cleanup evidence anywhere in its body** (see below).
-5. The sender's type resolves to an entry in the **long-lived service allowlist** (see [Options](#options)), and no hop between that entry and the signal is a Lumino `Widget` — `shell.currentWidget.title.changed` is a widget reached through a service, not an application-lifetime sender.
+1. **`this` is an instance of the enclosing class.** In a `static` member `this` is the class object, and inside a nested regular function it is whatever the caller binds; neither is an instance whose lifetime this rule reasons about, and neither is removed by a `Signal.clearData(this)` in `dispose()`.
+2. The class has **no `extends` clause**. A base class such as Lumino's `Widget` already calls `Signal.clearData(this)` from its inherited `dispose()`, and that cleanup is invisible from the subclass body.
+3. The class has a **disposal protocol**: it `implements` something ending in `Disposable`, or declares a non-static `dispose` or `isDisposed` member. Without one it is almost always a plugin-scope singleton whose lifetime already matches the services it connects to — and there is nowhere to put a disconnect anyway.
+4. The signal is not named `disposed`. That signal fires as its own sender is torn down, so the connection dies with it; flagging it would contradict the fix the rule recommends.
+5. The class shows **no cleanup evidence anywhere in its body** (see below).
+6. The sender's type resolves to an entry in the **long-lived service allowlist** (see [Options](#options)), and no hop between that entry and the signal is a Lumino `Widget` — `shell.currentWidget.title.changed` is a widget reached through a service, not an application-lifetime sender. The enclosing instance itself never counts: a class whose own type name is on the allowlist cannot outlive itself, so `this._sub.changed.connect(...)` inside it is judged on `this._sub` alone.
 
 Any of these counts as cleanup evidence and silences the whole class:
 
-- a call to `Signal.clearData(...)`, `Signal.disconnectReceiver(...)`, `Signal.disconnectAll(...)`, `Signal.disconnectSender(...)`, or `Signal.disconnectBetween(...)` (including through a renamed import of `Signal` from `@lumino/signaling`)
+- a call to `Signal.clearData(...)`, `Signal.disconnectReceiver(...)`, `Signal.disconnectAll(...)`, `Signal.disconnectSender(...)`, or `Signal.disconnectBetween(...)` (reached through a renamed import of `Signal` from `@lumino/signaling`, or through a namespace import as `ns.Signal.clearData(...)`)
 - any `.disconnect(...)` call — covers `dispose()` teardown as well as disconnect-before-reconnect idioms
 - a call to any method listed in `additionalCleanupMethods`
 

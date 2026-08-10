@@ -156,6 +156,25 @@ nonTypeAwareTester.run(
           refresh(): void {}
         }
       `
+      },
+      {
+        // Inside a nested regular function `this` is not the enclosing class,
+        // so `this._onChanged` does not refer to the member below and must not
+        // be resolved against it.
+        code: `
+        class Watcher {
+          wire(model: any): void {
+            function inner(this: { _onChanged(): void }): void {
+              model.changed.connect(this._onChanged);
+            }
+            inner.call({ _onChanged: () => {} });
+          }
+          private _onChanged(): void {
+            this.refresh();
+          }
+          refresh(): void {}
+        }
+      `
       }
     ],
     invalid: [

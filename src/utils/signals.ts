@@ -122,9 +122,10 @@ const SIGNAL_CLEANUP_STATICS = [
 ];
 
 /**
- * Collects the local names under which the Lumino `Signal` namespace is
- * available in this file. Always includes 'Signal' (ambient/global usage) and
- * adds local aliases from `import { Signal as X } from '@lumino/signaling'`.
+ * Collects the names under which the Lumino `Signal` namespace is reachable in
+ * this file. Always includes 'Signal' (ambient/global usage), plus local
+ * aliases from `import { Signal as X } from '@lumino/signaling'` and the
+ * qualified `ns.Signal` form of `import * as ns from '@lumino/signaling'`.
  */
 export function collectSignalNamespaceLocalNames(
   program: TSESTree.Program
@@ -142,11 +143,32 @@ export function collectSignalNamespaceLocalNames(
           specifier.imported.name === 'Signal'
         ) {
           names.add(specifier.local.name);
+        } else if (specifier.type === 'ImportNamespaceSpecifier') {
+          names.add(`${specifier.local.name}.Signal`);
         }
       }
     }
   }
   return names;
+}
+
+/**
+ * Dotted source name of an identifier or of a single-level `a.b` member
+ * expression; null for anything deeper or computed.
+ */
+function qualifiedName(node: TSESTree.Node): string | null {
+  if (node.type === 'Identifier') {
+    return node.name;
+  }
+  if (
+    node.type === 'MemberExpression' &&
+    !node.computed &&
+    node.object.type === 'Identifier' &&
+    node.property.type === 'Identifier'
+  ) {
+    return `${node.object.name}.${node.property.name}`;
+  }
+  return null;
 }
 
 /**
@@ -157,14 +179,11 @@ export function isSignalNamespaceCleanupCall(
   node: TSESTree.CallExpression,
   signalLocalNames: ReadonlySet<string>
 ): boolean {
-  return (
-    isMemberCallNamed(node, SIGNAL_CLEANUP_STATICS) &&
-    (node.callee as TSESTree.MemberExpression).object.type === 'Identifier' &&
-    signalLocalNames.has(
-      ((node.callee as TSESTree.MemberExpression).object as TSESTree.Identifier)
-        .name
-    )
-  );
+  if (!isMemberCallNamed(node, SIGNAL_CLEANUP_STATICS)) {
+    return false;
+  }
+  const name = qualifiedName(node.callee.object);
+  return name !== null && signalLocalNames.has(name);
 }
 
 /**
@@ -185,28 +204,58 @@ export function getEnclosingClass(node: TSESTree.Node): ClassLike | null {
   return null;
 }
 
+export type ThisBinding = 'instance' | 'constructor' | 'none';
+
 /**
- * Determines whether `node` sits in a static class context by reading the
- * `static` flag of the nearest enclosing class member (or static block).
+ * What does `this` denote at `node`?
+ *
+ * - `'instance'`: an instance of the enclosing class.
+ * - `'constructor'`: the class object itself — `static` members and static
+ *   blocks.
+ * - `'none'`: neither, because `this` is rebound on the way up: a nested
+ *   regular function, an object-literal method, or module scope. Whatever
+ *   `this` is there, it is not decided by the enclosing class.
+ *
+ * Arrow functions are transparent. Regular functions are not, unless they are
+ * the value of a class member — that is the method itself, not a nested one.
  */
-export function isStaticContext(node: TSESTree.Node): boolean {
+export function getThisBinding(node: TSESTree.Node): ThisBinding {
   let current: TSESTree.Node | undefined = node.parent;
   while (current) {
     if (current.type === 'StaticBlock') {
-      return true;
+      return 'constructor';
+    }
+    if (
+      current.type === 'FunctionExpression' ||
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'TSDeclareFunction'
+    ) {
+      const parent: TSESTree.Node | undefined = current.parent;
+      const isClassMemberValue =
+        (parent?.type === 'MethodDefinition' ||
+          parent?.type === 'PropertyDefinition') &&
+        parent.value === current;
+      if (!isClassMemberValue) {
+        return 'none';
+      }
     }
     if (
       current.type === 'MethodDefinition' ||
       current.type === 'PropertyDefinition'
     ) {
-      return current.static;
+      return current.static ? 'constructor' : 'instance';
     }
-    if (current.type === 'ClassBody') {
-      return false;
+    if (
+      current.type === 'ClassDeclaration' ||
+      current.type === 'ClassExpression'
+    ) {
+      // Reached the class without crossing one of its members — a decorator or
+      // a heritage expression, where `this` is not the instance.
+      return 'none';
     }
     current = current.parent;
   }
-  return false;
+  return 'none';
 }
 
 /**
@@ -290,9 +339,17 @@ export function resolveUnboundThisMethodConnect(
     return null;
   }
 
+  const thisBinding = getThisBinding(node);
+  if (thisBinding === 'none') {
+    // Inside a nested regular function `this` is not the enclosing class, so
+    // `this.X` does not refer to a member of it and must not be resolved
+    // against its body.
+    return null;
+  }
+
   const member = resolveClassMember(enclosingClass, name, {
     isPrivate,
-    isStatic: isStaticContext(node)
+    isStatic: thisBinding === 'constructor'
   });
   if (!member) {
     // Not found in this class (possibly inherited).

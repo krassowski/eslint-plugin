@@ -728,7 +728,14 @@ function isLongLivedModel(
   ) {
     return false;
   }
-  for (let i = Math.max(ownedDepth + 1, 0); i < chain.prefixes.length; i++) {
+  // As in `isLongLivedService`, a `this` root is the enclosing instance and is
+  // never the long-lived counterpart: a class that is itself named `...Model`
+  // says nothing about the lifetime of the field hanging off it.
+  const start = Math.max(
+    ownedDepth + 1,
+    chain.root?.type === 'ThisExpression' ? 1 : 0
+  );
+  for (let i = start; i < chain.prefixes.length; i++) {
     if (prefixIsModelLike(chain, i, context)) {
       return true;
     }
@@ -751,7 +758,12 @@ function isLongLivedService(
   if (!context.checker) {
     return null;
   }
-  for (let i = 0; i < chain.prefixes.length; i++) {
+  // `prefixes[0]` is the root of the path. When that root is `this` it is the
+  // enclosing instance, which cannot outlive itself — skip it, so a class whose
+  // own type name is allowlisted (`CommandRegistry`, `ServiceManager`, or a
+  // configured entry) is not matched against itself.
+  const start = chain.root?.type === 'ThisExpression' ? 1 : 0;
+  for (let i = start; i < chain.prefixes.length; i++) {
     const name = typeNameOf(chain.prefixes[i], context);
     if (!name || !context.longLivedTypes.has(name)) {
       continue;
