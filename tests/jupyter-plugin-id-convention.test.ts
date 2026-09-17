@@ -392,6 +392,42 @@ ruleTester.run('plugin-id-convention', pluginIdConvention, {
       `,
       errors: [{ messageId: 'mismatchedPrefix' }]
     },
+    // Angle-bracket assertions type the object like `as` and `satisfies` do:
+    // on the object, on an array of objects, and on a factory's return value.
+    {
+      filename: fixtureFilename,
+      code: `
+        const plugin = <JupyterFrontEndPlugin<void>>{
+          id: '@jupyterlab/other-extension:plugin',
+          activate() {}
+        };
+      `,
+      errors: [{ messageId: 'mismatchedPrefix' }]
+    },
+    {
+      filename: fixtureFilename,
+      code: `
+        const plugins = <JupyterFrontEndPlugin<void>[]>[
+          {
+            id: '@jupyterlab/other-extension:plugin',
+            activate() {}
+          }
+        ];
+      `,
+      errors: [{ messageId: 'mismatchedPrefix' }]
+    },
+    {
+      filename: fixtureFilename,
+      code: `
+        function make(): JupyterFrontEndPlugin<void> {
+          return <JupyterFrontEndPlugin<void>>{
+            id: '@jupyterlab/other-extension:plugin',
+            activate() {}
+          };
+        }
+      `,
+      errors: [{ messageId: 'mismatchedPrefix' }]
+    },
     // IDs assembled from const strings.
     {
       filename: fixtureFilename,

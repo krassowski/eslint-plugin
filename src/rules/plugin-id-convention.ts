@@ -207,7 +207,8 @@ const pluginIdConvention = createRule({
 
       if (
         parent.type === 'TSAsExpression' ||
-        parent.type === 'TSSatisfiesExpression'
+        parent.type === 'TSSatisfiesExpression' ||
+        parent.type === 'TSTypeAssertion'
       ) {
         return (
           mentionsPluginType(parent.typeAnnotation) ||
@@ -237,7 +238,8 @@ const pluginIdConvention = createRule({
 
       if (
         grandparent.type === 'TSAsExpression' ||
-        grandparent.type === 'TSSatisfiesExpression'
+        grandparent.type === 'TSSatisfiesExpression' ||
+        grandparent.type === 'TSTypeAssertion'
       ) {
         return (
           mentionsPluginType(grandparent.typeAnnotation) ||
@@ -258,7 +260,8 @@ const pluginIdConvention = createRule({
 
       while (
         parent?.type === 'TSAsExpression' ||
-        parent?.type === 'TSSatisfiesExpression'
+        parent?.type === 'TSSatisfiesExpression' ||
+        parent?.type === 'TSTypeAssertion'
       ) {
         expression = parent;
         parent = parent.parent;
