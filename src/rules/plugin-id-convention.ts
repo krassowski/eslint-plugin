@@ -313,6 +313,19 @@ const pluginIdConvention = createRule({
      * Reports plugin IDs that do not use the owning extension package prefix.
      */
     function reportIfNeeded(node: TSESTree.ObjectExpression): void {
+      // The shape and annotation checks are syntactic, so they run before the
+      // ID is resolved: resolving may ask the type checker, and most object
+      // literals with an `id` are commands, menu items or DOM nodes.
+      const hasId = getObjectProperties(node).has('id');
+      if (
+        !hasId ||
+        (!looksLikePluginObject(node, hasId) &&
+          !looksLikeMimeExtensionObject(node, hasId) &&
+          !hasPluginType(node))
+      ) {
+        return;
+      }
+
       const pluginId = getPluginId(
         node,
         context.sourceCode.getScope(node),
@@ -320,14 +333,6 @@ const pluginIdConvention = createRule({
         getTSNode
       );
       if (pluginId === null) {
-        return;
-      }
-
-      if (
-        !looksLikePluginObject(node, pluginId) &&
-        !looksLikeMimeExtensionObject(node, pluginId) &&
-        !hasPluginType(node)
-      ) {
         return;
       }
 

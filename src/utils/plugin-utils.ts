@@ -417,16 +417,16 @@ export function isCallableProperty(
  * Returns true when an object literal has the shape of a JupyterLab plugin:
  * a string `id`, an `activate` function, and at least one of the properties
  * which only plugins carry. Used for plugin objects written without a type
- * annotation. The plugin ID can be supplied by callers that resolve it from a
- * local const instead of a literal.
+ * annotation. A caller that resolves the ID itself passes whether one is
+ * present, so this check needs no type information.
  */
 export function looksLikePluginObject(
   node: TSESTree.ObjectExpression,
-  pluginId: string | null = getPluginId(node)
+  hasId: boolean = getPluginId(node) !== null
 ): boolean {
   const properties = getObjectProperties(node);
 
-  if (pluginId === null || !properties.has('id')) {
+  if (!hasId || !properties.has('id')) {
     return false;
   }
 
@@ -440,17 +440,13 @@ export function looksLikePluginObject(
 /**
  * Returns true when an object literal has the shape of a MIME renderer
  * extension entry: a string `id` and a `rendererFactory`. Used for entries
- * written without a type annotation. The plugin ID can be supplied by callers
- * that resolve it from an expression instead of a literal.
+ * written without a type annotation. A caller that resolves the ID itself
+ * passes whether one is present.
  */
 export function looksLikeMimeExtensionObject(
   node: TSESTree.ObjectExpression,
-  pluginId: string | null = getPluginId(node)
+  hasId: boolean = getPluginId(node) !== null
 ): boolean {
   const properties = getObjectProperties(node);
-  return (
-    pluginId !== null &&
-    properties.has('id') &&
-    properties.has('rendererFactory')
-  );
+  return hasId && properties.has('id') && properties.has('rendererFactory');
 }
